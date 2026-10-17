@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+# patient data must never be committed
+backend/data/*.db
+.env

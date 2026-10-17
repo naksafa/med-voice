@@ -1,0 +1,2 @@
+# Optional: local, private speech-to-text with Whisper (~500 MB model download on first use)
+faster-whisper>=1.0

@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MedVoice</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%230f766e'/><path d='M12 5a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0v-4A2.5 2.5 0 0 0 12 5Zm-5 6.5a5 5 0 0 0 10 0M12 16.5V19' stroke='white' stroke-width='1.8' fill='none' stroke-linecap='round'/></svg>" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3Zm-6 8a6 6 0 0 0 12 0M12 18v2.5"/></svg>
+      </span>
+      <div>
+        <strong>MedVoice</strong>
+        <small>Speak the consultation, we write it down</small>
+      </div>
+    </div>
+    <div class="controls">
+      <label class="ctl">Dictation
+        <select id="lang">
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      <label class="ctl">Voice engine
+        <select id="engine">
+          <option value="browser">Browser</option>
+          <option value="whisper">Whisper (local)</option>
+        </select>
+      </label>
+      <label class="ctl switch" title="Use Claude to structure dictation (falls back to the offline engine)">
+        <input type="checkbox" id="use-ai" /> <span>Claude AI</span>
+      </label>
+      <span id="status" class="status-pills"></span>
+      <button class="btn ghost" id="btn-doctor">Doctor profile</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- ================= PATIENTS ================= -->
+    <aside class="panel patients">
+      <div class="panel-head">
+        <h2>Patients</h2>
+        <button class="btn primary sm" id="btn-new-patient">+ New</button>
+      </div>
+      <input id="patient-search" class="input" type="search" placeholder="Patient number (MV-…) or name" autocomplete="off" />
+      <ul id="patient-results" class="list"></ul>
+
+      <section id="patient-card" class="patient-card hidden">
+        <div class="pc-top">
+          <div>
+            <div class="pc-name" id="pc-name"></div>
+            <div class="pc-meta" id="pc-meta"></div>
+          </div>
+          <button class="btn ghost sm" id="btn-edit-patient">Edit</button>
+        </div>
+        <button class="pc-number" id="pc-number" title="Copy patient number"></button>
+        <div id="pc-allergies" class="pc-alert hidden"></div>
+        <div id="pc-chronic" class="pc-line hidden"></div>
+        <h3>History</h3>
+        <ul id="history" class="history"></ul>
+      </section>
+    </aside>
+
+    <!-- ================= CONSULTATION ================= -->
+    <main class="consult">
+      <section id="empty-state" class="empty">
+        <div class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3Zm-6 8a6 6 0 0 0 12 0M12 18v2.5"/></svg>
+        </div>
+        <h1>Select or create a patient</h1>
+        <p>Every patient gets a unique number (e.g. <code>MV-7K3P-QX9A</code>). Type it at the next visit to find their full history.</p>
+        <ol class="how">
+          <li><b>Diagnosis</b> — say what the patient has</li>
+          <li><b>Prescription</b> — dictate the drugs, doses and durations</li>
+          <li><b>Certificate</b> — optional sick leave, fitness or attendance</li>
+        </ol>
+      </section>
+
+      <section id="workspace" class="hidden">
+        <div class="ws-head">
+          <div>
+            <h1 id="ws-title">New consultation</h1>
+            <p class="muted" id="ws-sub"></p>
+          </div>
+          <button class="btn ghost" id="btn-reset">New consultation</button>
+        </div>
+
+        <!-- Smart dictation -->
+        <div class="card smart">
+          <div class="card-head">
+            <div>
+              <h2>Dictate everything at once</h2>
+              <p class="muted">Say the diagnosis, then “prescription / ordonnance …”, then “certificate / arrêt de travail …”. MedVoice fills the three parts.</p>
+            </div>
+          </div>
+          <div class="dictation" data-id="smart">
+            <textarea class="input" rows="3" placeholder="e.g. Angine aiguë avec fièvre à 39. Ordonnance : amoxicilline 1 g deux fois par jour pendant 6 jours, paracétamol 1 g si douleur. Arrêt de travail de 3 jours."></textarea>
+            <div class="dict-bar">
+              <button class="mic" type="button"><span class="dot"></span><span class="mic-label">Start dictation</span></button>
+              <span class="mic-status muted"></span>
+              <button class="btn primary" id="btn-structure" type="button">Fill the 3 parts</button>
+            </div>
+          </div>
+        </div>
+
+        <nav class="steps" role="tablist">
+          <button class="step active" data-step="diagnosis" role="tab"><span>1</span> Diagnosis</button>
+          <button class="step" data-step="prescription" role="tab"><span>2</span> Prescription</button>
+          <button class="step" data-step="certificate" role="tab"><span>3</span> Certificate <em>optional</em></button>
+          <button class="step" data-step="review" role="tab"><span>4</span> Review &amp; save</button>
+        </nav>
+
+        <!-- 1. Diagnosis -->
+        <section class="card step-panel" data-panel="diagnosis">
+          <h2>What does the patient have?</h2>
+          <div class="dictation" data-id="diagnosis">
+            <textarea class="input" id="diag-text" rows="4" placeholder="Dictate or type the clinical findings and diagnosis…"></textarea>
+            <div class="dict-bar">
+              <button class="mic" type="button"><span class="dot"></span><span class="mic-label">Start dictation</span></button>
+              <span class="mic-status muted"></span>
+              <button class="btn" id="btn-analyze" type="button">Detect terms</button>
+            </div>
+          </div>
+          <div id="diag-corrections" class="notice hidden"></div>
+          <div class="grid2">
+            <div>
+              <h3>Diagnoses <small class="muted">ICD-10</small></h3>
+              <div id="conditions" class="chips"></div>
+              <div class="ac" data-type="condition">
+                <input class="input sm" placeholder="+ Add a diagnosis" autocomplete="off" />
+                <ul class="ac-list"></ul>
+              </div>
+            </div>
+            <div>
+              <h3>Symptoms</h3>
+              <div id="symptoms" class="chips"></div>
+              <div class="ac" data-type="symptom">
+                <input class="input sm" placeholder="+ Add a symptom" autocomplete="off" />
+                <ul class="ac-list"></ul>
+              </div>
+            </div>
+          </div>
+          <h3>Notes</h3>
+          <textarea class="input" id="diag-notes" rows="2" placeholder="Exam, vitals, follow-up…"></textarea>
+          <div class="panel-foot"><button class="btn primary next" data-next="prescription">Next: prescription →</button></div>
+        </section>
+
+        <!-- 2. Prescription -->
+        <section class="card step-panel hidden" data-panel="prescription">
+          <h2>Prescription</h2>
+          <div class="dictation" data-id="prescription">
+            <textarea class="input" id="rx-text" rows="3" placeholder="e.g. Amoxicilline 1 g, 1 comprimé 3 fois par jour pendant 7 jours…"></textarea>
+            <div class="dict-bar">
+              <button class="mic" type="button"><span class="dot"></span><span class="mic-label">Start dictation</span></button>
+              <span class="mic-status muted"></span>
+              <button class="btn" id="btn-parse" type="button">Build prescription</button>
+            </div>
+          </div>
+          <div id="rx-warnings"></div>
+          <div class="table-wrap">
+            <table class="rx">
+              <thead><tr><th>Drug</th><th>Dosage</th><th>Form</th><th>Quantity</th><th>Frequency</th><th>Duration</th><th>Instructions</th><th></th></tr></thead>
+              <tbody id="rx-body"></tbody>
+            </table>
+          </div>
+          <div class="ac" data-type="medication">
+            <input class="input sm" placeholder="+ Add a drug" autocomplete="off" />
+            <ul class="ac-list"></ul>
+          </div>
+          <div class="panel-foot">
+            <button class="btn" type="button" data-preview="prescription">Preview ordonnance PDF</button>
+            <button class="btn primary next" data-next="certificate">Next: certificate →</button>
+          </div>
+        </section>
+
+        <!-- 3. Certificate -->
+        <section class="card step-panel hidden" data-panel="certificate">
+          <div class="card-head">
+            <h2>Medical certificate</h2>
+            <label class="switch"><input type="checkbox" id="cert-on" /> <span>Include a certificate</span></label>
+          </div>
+          <div id="cert-form" class="cert-form disabled">
+            <div class="form-grid">
+              <label>Type
+                <select id="cert-type" class="input">
+                  <option value="sick_leave">Sick leave / Arrêt de travail</option>
+                  <option value="fitness">Fitness for sport / Non contre-indication</option>
+                  <option value="attendance">Attendance / Attestation de présence</option>
+                  <option value="custom">Custom text</option>
+                </select>
+              </label>
+              <label class="f-days">Days <input id="cert-days" class="input" type="number" min="0" max="365" value="3" /></label>
+              <label class="f-days">Starting <input id="cert-start" class="input" type="date" /></label>
+              <label class="f-sport hidden">Sport <input id="cert-sport" class="input" placeholder="football, running…" /></label>
+            </div>
+            <label>Remarks / custom text</label>
+            <div class="dictation" data-id="certificate">
+              <textarea class="input" id="cert-remarks" rows="3" placeholder="Optional — dictate extra wording here"></textarea>
+              <div class="dict-bar">
+                <button class="mic" type="button"><span class="dot"></span><span class="mic-label">Start dictation</span></button>
+                <span class="mic-status muted"></span>
+              </div>
+            </div>
+          </div>
+          <div class="panel-foot">
+            <button class="btn" type="button" data-preview="certificate">Preview certificate PDF</button>
+            <button class="btn primary next" data-next="review">Next: review →</button>
+          </div>
+        </section>
+
+        <!-- 4. Review -->
+        <section class="card step-panel hidden" data-panel="review">
+          <h2>Review</h2>
+          <div id="review"></div>
+          <div class="panel-foot">
+            <span id="save-msg" class="muted"></span>
+            <button class="btn" type="button" data-preview="prescription">Preview ordonnance PDF</button>
+            <button class="btn" type="button" data-preview="certificate">Preview certificate PDF</button>
+            <a class="btn hidden" id="btn-pdf-rx" target="_blank">Prescription PDF</a>
+            <a class="btn hidden" id="btn-pdf-cert" target="_blank">Certificate PDF</a>
+            <button class="btn primary" id="btn-save">Save consultation</button>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <!-- Patient dialog -->
+  <dialog id="dlg-patient">
+    <form method="dialog" id="form-patient" class="dlg">
+      <h2 id="dlg-patient-title">New patient</h2>
+      <div class="form-grid">
+        <label>First name <input class="input" name="first_name" required /></label>
+        <label>Last name <input class="input" name="last_name" required /></label>
+        <label>Date of birth <input class="input" type="date" name="birth_date" /></label>
+        <label>Sex
+          <select class="input" name="sex"><option value=""></option><option value="F">F</option><option value="M">M</option><option value="X">Other</option></select>
+        </label>
+        <label>Phone <input class="input" name="phone" /></label>
+      </div>
+      <label>Allergies <input class="input" name="allergies" placeholder="e.g. penicillin, NSAIDs" /></label>
+      <label>Chronic conditions <input class="input" name="chronic_conditions" placeholder="e.g. hypertension, asthma" /></label>
+      <label>Notes <textarea class="input" name="notes" rows="2"></textarea></label>
+      <div class="dlg-foot">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" value="ok">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Doctor dialog -->
+  <dialog id="dlg-doctor">
+    <form method="dialog" id="form-doctor" class="dlg">
+      <h2>Doctor profile</h2>
+      <p class="muted">Printed on the header of prescriptions and certificates.</p>
+      <div class="form-grid">
+        <label>Full name <input class="input" name="name" placeholder="Jane Martin" /></label>
+        <label>Specialty <input class="input" name="specialty" placeholder="General practitioner" /></label>
+        <label>Clinic <input class="input" name="clinic" /></label>
+        <label>Phone <input class="input" name="phone" /></label>
+        <label>Registration no. <input class="input" name="registration_number" /></label>
+      </div>
+      <label>Address <textarea class="input" name="address" rows="2"></textarea></label>
+      <div class="grid2 doc-images">
+        <div class="img-field" data-kind="letterhead">
+          <span class="img-label">Letterhead / entête</span>
+          <div class="img-box"><img alt="Letterhead" hidden /><span class="muted">None — the text above is used</span></div>
+          <div class="img-actions">
+            <label class="btn sm">Upload<input type="file" accept="image/png,image/jpeg,image/webp" hidden /></label>
+            <button type="button" class="btn ghost sm img-del" hidden>Remove</button>
+          </div>
+        </div>
+        <div class="img-field" data-kind="signature">
+          <span class="img-label">Signature &amp; stamp</span>
+          <div class="img-box"><img alt="Signature" hidden /><span class="muted">None — blank space to sign</span></div>
+          <div class="img-actions">
+            <label class="btn sm">Upload<input type="file" accept="image/png,image/jpeg,image/webp" hidden /></label>
+            <button type="button" class="btn ghost sm img-del" hidden>Remove</button>
+          </div>
+        </div>
+      </div>
+      <p class="muted img-hint">Scan or photograph your paper entête and signature. A PNG with a transparent background looks best for the signature.</p>
+      <div class="dlg-foot">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" value="ok">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
